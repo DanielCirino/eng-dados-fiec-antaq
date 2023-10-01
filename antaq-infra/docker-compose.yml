@@ -1,0 +1,399 @@
+version: '3.7'
+
+volumes:
+  airflow-logs-volume:
+    name: "airflow-logs-volume"
+    driver: local
+  airflow-downloads-volume:
+    name: "airflow-downloads-volume"
+    driver: local
+  airflow-plugins-volume:
+    name: "airflow-plugins-volume"
+    driver: local
+  airflow-database-volume:
+    name: "airflow-database-volume"
+    driver: local
+  postgres-server-volume:
+    name: "postgres-server-volume"
+    driver: local
+  metabase-app-volume:
+    name: "metabase-app-volume"
+    driver: local
+  minio-server-volume-1-1:
+    name: "minio-server-volume-1-1"
+    driver: local
+  minio-server-volume-1-2:
+    name: "minio-server-volume-1-2"
+    driver: local
+  minio-server-volume-2-1:
+    name: "minio-server-volume-2-1"
+    driver: local
+  minio-server-volume-2-2:
+    name: "minio-server-volume-2-2"
+    driver: local
+  minio-server-volume-3-1:
+    name: "minio-server-volume-3-1"
+    driver: local
+  minio-server-volume-3-2:
+    name: "minio-server-volume-3-2"
+    driver: local
+  minio-server-volume-4-1:
+    name: "minio-server-volume-4-1"
+    driver: local
+  minio-server-volume-4-2:
+    name: "minio-server-volume-4-2"
+    driver: local
+
+networks:
+  datagate-network:
+      driver: bridge
+      ipam:
+          driver: default
+          config:
+              - subnet: "172.12.0.0/16"
+                gateway: "172.12.0.1"
+
+# Configurações comuns aos servidores MinIO
+x-minio-common: &minio-common
+  image: minio/minio:RELEASE.2023-02-22T18-23-45Z
+  command: server --console-address ":9001" http://minio{1...4}/data{1...2}
+  expose:
+    - "9000"
+    - "9001"
+  environment:
+    MINIO_ROOT_USER: minioadmin
+    MINIO_ROOT_PASSWORD: minioadmin
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    interval: 30s
+    timeout: 20s
+    retries: 3
+
+# Configurações comuns ao Apache Airflow
+x-airflow-common: &airflow-common
+  build:
+    dockerfile: ./docker/airflow/Dockerfile
+  user: "${AIRFLOW_UID}:0"
+  env_file:
+    - ./docker/airflow/.env
+  volumes:
+    - airflow-logs-volume:/opt/airflow/logs
+    - airflow-downloads-volume:/opt/airflow/downloads
+    - airflow-plugins-volume:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ../floresta-plantada-etl/dags:/opt/airflow/dags
+
+x-airflow-depends-on: &airflow-depends-on
+  depends_on:
+    airflow-database:
+      condition: service_healthy
+    airflow-init:
+      condition: service_completed_successfully
+
+
+# Configurações comuns ao Apache Spark
+x-spark-common: &spark-common
+  build: ./docker/spark
+  image: spark-cluster:3.4.1
+  volumes:
+      - ../data/spark/apps:/opt/spark-apps
+      - ../data/spark/data:/opt/spark-data
+      - ../data/spark/logs:/opt/spark/spark-events
+  env_file:
+    - ./docker/spark/.env
+
+services:
+  ###################################################
+  # Servidores MinIO
+  #==================================================
+  minio-server-kevin:
+    <<: *minio-common
+    container_name: minio-server-kevin
+    hostname: minio1
+    volumes:
+      - minio-server-volume-1-1:/data1
+      - minio-server-volume-1-2:/data2
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.16
+
+  minio-server-dave:
+    <<: *minio-common
+    container_name: minio-server-dave
+    hostname: minio2
+    volumes:
+      - minio-server-volume-2-1:/data1
+      - minio-server-volume-2-2:/data2
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.17
+
+  minio-server-carl:
+    <<: *minio-common
+    container_name: minio-server-carl
+    hostname: minio3
+    volumes:
+      - minio-server-volume-3-1:/data1
+      - minio-server-volume-3-2:/data2
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.18
+
+  minio-server-bob:
+    <<: *minio-common
+    container_name: minio-server-bob
+    hostname: minio4
+    volumes:
+      - minio-server-volume-4-1:/data1
+      - minio-server-volume-4-2:/data2
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.19
+
+  minio-webserver:
+    container_name: minio-webserver
+    image: nginx:1.19.2-alpine
+    hostname: minio-webserver
+    volumes:
+      - ./docker/minio/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    depends_on:
+      - minio-server-bob
+      - minio-server-kevin
+      - minio-server-carl
+      - minio-server-dave
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.20
+
+
+  ###################################################
+  # Servidores Apache Airflow
+  #==================================================
+
+  airflow-database:
+    container_name: airflow-database
+    image: postgres:latest
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    env_file:
+      - ./docker/airflow/.env
+    volumes:
+      - airflow-database-volume:/var/lib/postgresql/data
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.110
+
+  airflow-scheduler:
+    <<: [*airflow-common,*airflow-depends-on]
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: on-failure
+    ports:
+      - "8793:8793"
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.111
+
+  airflow-webserver:
+    <<: [*airflow-common,*airflow-depends-on]
+    container_name: airflow-webserver
+    restart: always
+    command: webserver
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    networks:
+        datagate-network:
+          ipv4_address: 172.12.0.112
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/downloads
+        chmod 777 -R /sources/downloads
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,downloads}
+        exec /entrypoint airflow version
+    networks:
+      - datagate-network
+
+  ###################################################
+  # Servidor Jupyter Lab
+  #==================================================
+  jupyterlab-server:
+    container_name: jupyterlab-server
+    build:
+      dockerfile: ./docker/jupyterlab/Dockerfile
+    volumes:
+     - ../floresta-plantada-notebooks:/notebooks
+    ports:
+      - "8888:8888"
+      - "20021:20020"
+    environment:
+      - JUPYTER_ENABLE_LAB=1
+      - SPARK_MASTER_IP=spark-master
+    command: start-notebook.sh --NotebookApp.notebook_dir=/notebooks --NotebookApp.token='' --NotebookApp.password=''
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.10
+
+  ###################################################
+  # Servidor PostgreSQL
+  #==================================================
+  postgres-server:
+    container_name: postgres-server
+    hostname: postgres-server
+    image: postgres:latest
+    ports:
+      - "5431:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 5
+    env_file:
+      - ./docker/postgresql/.env
+    volumes:
+      - postgres-server-volume:/var/lib/postgresql/data
+      - ./docker/postgresql/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/01-create-db.sh
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.6
+
+  ###################################################
+  # Servidor Metabase
+  #==================================================
+  metabase-app:
+    container_name: metabase-app
+    image: metabase/metabase:v0.45.3
+    restart: always
+    ports:
+      - "3001:3000"
+    volumes:
+      - metabase-app-volume:/metabase-data
+    env_file:
+      - ./docker/metabase/.env
+    depends_on:
+      - postgres-server
+    links:
+      - postgres-server
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.25
+
+  ###################################################
+  # Cluster Apache Spark Standalone
+  #==================================================
+  spark-master:
+    <<: *spark-common
+    container_name: spark-master
+    hostname: spark-master
+    entrypoint: [ './entrypoint.sh', 'master' ]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.30
+
+  spark-history-server:
+    <<: *spark-common
+    container_name: spark-history
+    entrypoint: [ './entrypoint.sh', 'history' ]
+    depends_on:
+      - spark-master
+    ports:
+      - '18080:18080'
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.31
+
+  spark-worker-a:
+    <<: *spark-common
+    container_name: spark-worker-a
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_DRIVER_MEMORY=2G
+      - SPARK_EXECUTOR_MEMORY=2G
+    ports:
+      - '9091:8080'
+      - '7000:7000'
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.32
+
+  spark-worker-b:
+    <<: *spark-common
+    container_name: spark-worker-b
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_DRIVER_MEMORY=2G
+      - SPARK_EXECUTOR_MEMORY=2G
+    ports:
+      - '9092:8080'
+      - '7001:7000'
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.33
+
+  spark-worker-c:
+    <<: *spark-common
+    container_name: spark-worker-c
+    entrypoint: [ './entrypoint.sh', 'worker' ]
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_DRIVER_MEMORY=2G
+      - SPARK_EXECUTOR_MEMORY=2G
+    ports:
+      - '9093:8080'
+      - '7002:7000'
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.34
+
+  spark-worker-d:
+    <<: *spark-common
+    container_name: spark-worker-d
+    entrypoint: [ './entrypoint.sh', 'worker' ]
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_DRIVER_MEMORY=2G
+      - SPARK_EXECUTOR_MEMORY=2G
+    ports:
+      - '9094:8080'
+      - '7003:7000'
+    networks:
+      datagate-network:
+        ipv4_address: 172.12.0.35

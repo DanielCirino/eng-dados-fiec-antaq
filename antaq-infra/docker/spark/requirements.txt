@@ -1,0 +1,5 @@
+ipython
+pandas
+pyarrow
+numpy
+pyspark==3.4.1

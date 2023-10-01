@@ -1,0 +1,7 @@
+python-dotenv
+boto3
+pyspark==3.4.1
+pandas
+beautifulsoup4
+apache-airflow==2.6.3
+apache-airflow-providers-google==10.1.0
