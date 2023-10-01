@@ -47,54 +47,38 @@ def obterLinksDownload(ano: int):
     links = []
 
     for dataset in datasets:
-        nomeArquivo=f"{ano}{dataset['arquivo_compactado']}"
+        nomeArquivo = f"{ano}{dataset['arquivo_compactado']}"
         links.append({
             "nome": dataset["nome"],
             "arquivo_compactado": nomeArquivo,
-            "link":f"{URL_BASE}/{nomeArquivo}"
+            "link": f"{URL_BASE}/{nomeArquivo}"
         })
 
     return links
 
-listaAnos = obterListaAnosDisponiveis()
 
-for ano in listaAnos:
-    listaArquivos = obterLinksDownload(ano)
-    for arquivo in listaArquivos:
-        print(f"Download arquivo [{arquivo['nome']}] do ano {ano}. Link: {arquivo['link']}")
-
-        with DAG(
-                f"antaq_{ano}_{arquivo['nome']}_download_arquivo",
-                description=f"Fazer o download arquivo [{arquivo['nome']}] do ano {ano}",
-                start_date=datetime(2023, 1, 1),
-                # schedule="@daily",
-                tags=["ingest", "download"]
-        ) as dag:
-            task_fazer_download_arquivo = BashOperator(
-                task_id=f"tsk_baixar_arquivo_zip_{arquivo['nome']}",
-                bash_command=f"python {os.getcwd()}/dags/antaq-etl/antaq_etl/job_baixar_arquivo_zip.py -u {arquivo['link']}",
-                dag=dag
-            )
-
-
-
-if __name__ == "__main__":
+def criarDAGSDonwloadArquivoCompactado():
     listaAnos = obterListaAnosDisponiveis()
 
     for ano in listaAnos:
         listaArquivos = obterLinksDownload(ano)
-        for arquivo in listaArquivos:
-            print(f"Download arquivo [{arquivo['nome']}] do ano {ano}. Link: {arquivo['link']}")
+        urls = ",".join([arquivo["link"] for arquivo in listaArquivos])
+        dataInicioDag = datetime.now()
+        with DAG(
+                f"antaq_{ano}_download_arquivos_zip",
+                description=f"Fazer o download arquivos do ano {ano}",
+                start_date=datetime(dataInicioDag.year, dataInicioDag.month, dataInicioDag.day),
+                # schedule="@daily",
+                tags=["ingest", "download"]
+        ) as dag:
+            task_fazer_download_arquivo = BashOperator(
+                task_id=f"tsk_baixar_arquivos_zip_{ano}",
+                bash_command=f"python {os.getcwd()}/dags/antaq-etl/antaq_etl/job_baixar_arquivo_zip.py -u {urls}",
+                dag=dag
+            )
 
-            with DAG(
-                    f"antaq_{arquivo['nome']}_download_arquivo",
-                    description=f"Fazer o download arquivo [{arquivo['nome']}] do ano {ano}",
-                    start_date=datetime(2023, 1, 1),
-                    # schedule="@daily",
-                    tags=["ingest", "download"]
-            ) as dag:
-                task_fazer_download_arquivo = BashOperator(
-                    task_id=f"tsk_baixar_arquivo_zip_{arquivo['nome']}",
-                    bash_command=f"python {os.getcwd()}/dags/job_baixar_arquivo_zip.py -u {arquivo['link']}",
-                    dag=dag
-                )
+
+criarDAGSDonwloadArquivoCompactado()
+
+if __name__ == "__main__":
+    criarDAGSDonwloadArquivoCompactado()
