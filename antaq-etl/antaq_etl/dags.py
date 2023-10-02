@@ -69,7 +69,7 @@ def criarDAGSDonwloadArquivoCompactado():
                 description=f"Fazer o download arquivos do ano {ano}",
                 start_date=datetime(dataInicioDag.year, dataInicioDag.month, dataInicioDag.day),
                 # schedule="@daily",
-                tags=["ingest", "download"]
+                tags=["ingest", "download", str(ano)]
         ) as dag:
             task_fazer_download_arquivo = BashOperator(
                 task_id=f"tsk_baixar_arquivos_zip_{ano}",
@@ -78,7 +78,23 @@ def criarDAGSDonwloadArquivoCompactado():
             )
 
 
-criarDAGSDonwloadArquivoCompactado()
+def criarDAGSDescompatarArquivo():
+    listaAnos = obterListaAnosDisponiveis()
+    for ano in listaAnos:
+        dataInicioDag = datetime.now()
+        with DAG(
+                f"antaq_{ano}_descompactar_arquivos_zip",
+                description=f"Descompactar arquivos do ano {ano}",
+                start_date=datetime(dataInicioDag.year, dataInicioDag.month, dataInicioDag.day),
+                # schedule="@daily",
+                tags=["tranform", "unzip", str(ano)]
+        ) as dag:
+            task_descompactar_arquivo = BashOperator(
+                task_id=f"tsk_descompactar_arquivos_{ano}",
+                bash_command=f"python {os.getcwd()}/dags/antaq-etl/antaq_etl/job_descompactar_arquivo.py -a {ano}",
+                dag=dag
+            )
 
-if __name__ == "__main__":
-    criarDAGSDonwloadArquivoCompactado()
+
+criarDAGSDonwloadArquivoCompactado()
+criarDAGSDescompatarArquivo()

@@ -1,11 +1,8 @@
 import argparse
 import logging
 import os
-
-
 import requests
 import setup_env
-
 from services.client_s3 import clientS3
 
 parser = argparse.ArgumentParser(prog="Projeto FIEC_ANTAQ - Download",
@@ -20,7 +17,8 @@ try:
     for url in listaUrl:
         nomeArquivo = os.path.basename(url).lower()
         ano = nomeArquivo[:4]
-        diretorio = f"year={ano}/downloaded/{nomeArquivo}"
+        tipoArquivo=nomeArquivo[4:-4]
+        diretorio = f"year={ano}/{tipoArquivo}/downloaded/{nomeArquivo}"
 
         session = requests.Session()
         headers = {
