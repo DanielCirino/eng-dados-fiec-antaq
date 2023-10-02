@@ -95,6 +95,22 @@ def criarDAGSDescompatarArquivo():
                 dag=dag
             )
 
+def criarDAGSalvarDadosOLTP():
+
+    dataInicioDag = datetime.now()
+    with DAG(
+            f"antaq_salvar_dados_mssql_oltp",
+            description=f"Salvar dados do datalake na base de dados SQL Server",
+            start_date=datetime(dataInicioDag.year, dataInicioDag.month, dataInicioDag.day),
+            # schedule="@daily",
+            tags=["ingest", "oltp"]
+    ) as dag:
+        task_descompactar_arquivo = BashOperator(
+            task_id=f"tsk_salvar_dados_mssql_oltp",
+            bash_command=f"python {os.getcwd()}/dags/antaq-etl/antaq_etl/job_salvar_dados_mssql.py",
+            dag=dag
+        )
 
 criarDAGSDonwloadArquivoCompactado()
 criarDAGSDescompatarArquivo()
+criarDAGSalvarDadosOLTP()

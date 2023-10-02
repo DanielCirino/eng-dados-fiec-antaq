@@ -27,8 +27,10 @@ if AMBIENTE == 'PROD':
     PATH_ARQUIVO_CONFIG = f'{ROOT_DIR}/.env'
 
 load_dotenv(PATH_ARQUIVO_CONFIG)
+os.environ["SPARK_JARS_DIR"] = f'{ROOT_DIR}/spark-jars'
 
 logging.info(f"Ambiente da aplicação:{AMBIENTE}")
+logging.info(f"Arquivo configuracao:{PATH_ARQUIVO_CONFIG}")
 logging.info(f"Python: {os.getenv('PYSPARK_PYTHON')}")
 
 
