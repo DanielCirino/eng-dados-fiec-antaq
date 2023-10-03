@@ -1,20 +1,17 @@
 version: '3.7'
 
 volumes:
-  airflow-logs-volume:
-    name: "airflow-logs-volume"
-    driver: local
-  airflow-downloads-volume:
-    name: "airflow-downloads-volume"
-    driver: local
-  airflow-plugins-volume:
-    name: "airflow-plugins-volume"
+  airflow-volume:
+    name: "airflow-volume"
     driver: local
   airflow-database-volume:
     name: "airflow-database-volume"
     driver: local
   postgres-server-volume:
     name: "postgres-server-volume"
+    driver: local
+  mongodb-server-volume:
+    name: "mongodb-server-volume"
     driver: local
   metabase-app-volume:
     name: "metabase-app-volume"
@@ -43,15 +40,23 @@ volumes:
   minio-server-volume-4-2:
     name: "minio-server-volume-4-2"
     driver: local
+  spark-apps-volume:
+    name: "spark-apps-volume"
+    driver: local
+  spark-data-volume:
+    name: "spark-data-volume"
+    driver: local
+  spark-logs-volume:
+    name: "spark-logs-volume"
+    driver: local
+  mssql-volume:
+    name: "mssql-volume"
+    driver: local
 
 networks:
-  datagate-network:
-      driver: bridge
-      ipam:
-          driver: default
-          config:
-              - subnet: "172.12.0.0/16"
-                gateway: "172.12.0.1"
+  docker_network:
+      external: true
+
 
 # Configurações comuns aos servidores MinIO
 x-minio-common: &minio-common
@@ -77,11 +82,12 @@ x-airflow-common: &airflow-common
   env_file:
     - ./docker/airflow/.env
   volumes:
-    - airflow-logs-volume:/opt/airflow/logs
-    - airflow-downloads-volume:/opt/airflow/downloads
-    - airflow-plugins-volume:/opt/airflow/plugins
+    - ./data/airflow/dags:/opt/airflow/dags
+    - ./data/airflow/logs:/opt/airflow/logs
+    - ./data/airflow/downloads:/opt/airflow/downloads
+    - ./data/airflow/plugins:/opt/airflow/plugins
     - /var/run/docker.sock:/var/run/docker.sock
-    - ../floresta-plantada-etl/dags:/opt/airflow/dags
+    - ./data/airflow/spark-jars:/opt/airflow/spark-jars
 
 x-airflow-depends-on: &airflow-depends-on
   depends_on:
@@ -96,9 +102,9 @@ x-spark-common: &spark-common
   build: ./docker/spark
   image: spark-cluster:3.4.1
   volumes:
-      - ../data/spark/apps:/opt/spark-apps
-      - ../data/spark/data:/opt/spark-data
-      - ../data/spark/logs:/opt/spark/spark-events
+      - spark-apps-volume:/opt/spark-apps
+      - spark-data-volume:/opt/spark-data
+      - spark-logs-volume:/opt/spark/spark-events
   env_file:
     - ./docker/spark/.env
 
@@ -114,8 +120,7 @@ services:
       - minio-server-volume-1-1:/data1
       - minio-server-volume-1-2:/data2
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.16
+      - docker_network
 
   minio-server-dave:
     <<: *minio-common
@@ -125,8 +130,7 @@ services:
       - minio-server-volume-2-1:/data1
       - minio-server-volume-2-2:/data2
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.17
+      - docker_network
 
   minio-server-carl:
     <<: *minio-common
@@ -136,8 +140,7 @@ services:
       - minio-server-volume-3-1:/data1
       - minio-server-volume-3-2:/data2
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.18
+      - docker_network
 
   minio-server-bob:
     <<: *minio-common
@@ -147,8 +150,7 @@ services:
       - minio-server-volume-4-1:/data1
       - minio-server-volume-4-2:/data2
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.19
+      - docker_network
 
   minio-webserver:
     container_name: minio-webserver
@@ -165,8 +167,7 @@ services:
       - minio-server-carl
       - minio-server-dave
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.20
+      - docker_network
 
 
   ###################################################
@@ -187,8 +188,7 @@ services:
     volumes:
       - airflow-database-volume:/var/lib/postgresql/data
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.110
+      - docker_network
 
   airflow-scheduler:
     <<: [*airflow-common,*airflow-depends-on]
@@ -198,8 +198,7 @@ services:
     ports:
       - "8793:8793"
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.111
+      - docker_network
 
   airflow-webserver:
     <<: [*airflow-common,*airflow-depends-on]
@@ -214,8 +213,7 @@ services:
       timeout: 30s
       retries: 5
     networks:
-        datagate-network:
-          ipv4_address: 172.12.0.112
+        - docker_network
 
   airflow-init:
     <<: *airflow-common
@@ -229,70 +227,7 @@ services:
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,downloads}
         exec /entrypoint airflow version
     networks:
-      - datagate-network
-
-  ###################################################
-  # Servidor Jupyter Lab
-  #==================================================
-  jupyterlab-server:
-    container_name: jupyterlab-server
-    build:
-      dockerfile: ./docker/jupyterlab/Dockerfile
-    volumes:
-     - ../floresta-plantada-notebooks:/notebooks
-    ports:
-      - "8888:8888"
-      - "20021:20020"
-    environment:
-      - JUPYTER_ENABLE_LAB=1
-      - SPARK_MASTER_IP=spark-master
-    command: start-notebook.sh --NotebookApp.notebook_dir=/notebooks --NotebookApp.token='' --NotebookApp.password=''
-    networks:
-      datagate-network:
-        ipv4_address: 172.12.0.10
-
-  ###################################################
-  # Servidor PostgreSQL
-  #==================================================
-  postgres-server:
-    container_name: postgres-server
-    hostname: postgres-server
-    image: postgres:latest
-    ports:
-      - "5431:5432"
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 5s
-      retries: 5
-    env_file:
-      - ./docker/postgresql/.env
-    volumes:
-      - postgres-server-volume:/var/lib/postgresql/data
-      - ./docker/postgresql/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/01-create-db.sh
-    networks:
-      datagate-network:
-        ipv4_address: 172.12.0.6
-
-  ###################################################
-  # Servidor Metabase
-  #==================================================
-  metabase-app:
-    container_name: metabase-app
-    image: metabase/metabase:v0.45.3
-    restart: always
-    ports:
-      - "3001:3000"
-    volumes:
-      - metabase-app-volume:/metabase-data
-    env_file:
-      - ./docker/metabase/.env
-    depends_on:
-      - postgres-server
-    links:
-      - postgres-server
-    networks:
-      datagate-network:
-        ipv4_address: 172.12.0.25
+      - docker_network
 
   ###################################################
   # Cluster Apache Spark Standalone
@@ -311,20 +246,7 @@ services:
       - '9090:8080'
       - '7077:7077'
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.30
-
-  spark-history-server:
-    <<: *spark-common
-    container_name: spark-history
-    entrypoint: [ './entrypoint.sh', 'history' ]
-    depends_on:
-      - spark-master
-    ports:
-      - '18080:18080'
-    networks:
-      datagate-network:
-        ipv4_address: 172.12.0.31
+      - docker_network
 
   spark-worker-a:
     <<: *spark-common
@@ -333,16 +255,15 @@ services:
     depends_on:
       - spark-master
     environment:
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_DRIVER_MEMORY=2G
-      - SPARK_EXECUTOR_MEMORY=2G
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_DRIVER_MEMORY=4G
+      - SPARK_EXECUTOR_MEMORY=4G
     ports:
       - '9091:8080'
       - '7000:7000'
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.32
+      - docker_network
 
   spark-worker-b:
     <<: *spark-common
@@ -351,16 +272,15 @@ services:
     depends_on:
       - spark-master
     environment:
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_DRIVER_MEMORY=2G
-      - SPARK_EXECUTOR_MEMORY=2G
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_DRIVER_MEMORY=4G
+      - SPARK_EXECUTOR_MEMORY=4G
     ports:
       - '9092:8080'
       - '7001:7000'
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.33
+      - docker_network
 
   spark-worker-c:
     <<: *spark-common
@@ -369,16 +289,15 @@ services:
     depends_on:
       - spark-master
     environment:
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_DRIVER_MEMORY=2G
-      - SPARK_EXECUTOR_MEMORY=2G
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_DRIVER_MEMORY=4G
+      - SPARK_EXECUTOR_MEMORY=4G
     ports:
       - '9093:8080'
       - '7002:7000'
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.34
+      - docker_network
 
   spark-worker-d:
     <<: *spark-common
@@ -387,13 +306,26 @@ services:
     depends_on:
       - spark-master
     environment:
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_DRIVER_MEMORY=2G
-      - SPARK_EXECUTOR_MEMORY=2G
+      - SPARK_WORKER_CORES=4
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_DRIVER_MEMORY=4G
+      - SPARK_EXECUTOR_MEMORY=4G
     ports:
       - '9094:8080'
       - '7003:7000'
     networks:
-      datagate-network:
-        ipv4_address: 172.12.0.35
+      - docker_network
+
+  sql-server:
+      container_name: sql-server
+      image: mcr.microsoft.com/mssql/server:2019-latest
+      environment:
+        SA_PASSWORD: "SqlServer2019!"
+        ACCEPT_EULA: "Y"
+        MSSQL_PID: "Developer"
+      ports:
+        - "1433:1433"
+      volumes:
+        - mssql-volume:/var/opt/mssql
+      networks:
+        - docker_network

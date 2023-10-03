@@ -52,7 +52,7 @@ def processarArquivoAtracacao(spark, dfArquivo, modoEscrita="overwrite"):
     print(f"Total registros no arquivo: {df.count()}")
 
     print("===========================================")
-    # df.printSchema()
+    df.printSchema()
     print("===========================================")
 
     print(f"Salvando dados de ATRACAÇÃO no banco de dados")
@@ -104,7 +104,7 @@ def processarArquivoCarga(spark, dfArquivo, modoEscrita="overwrite"):
     print(f"Total registros no arquivo: {df.count()}")
 
     print("===========================================")
-    # df.printSchema()
+    df.printSchema()
     print("===========================================")
 
     print(f"Salvando dados de CARGA no banco de dados")

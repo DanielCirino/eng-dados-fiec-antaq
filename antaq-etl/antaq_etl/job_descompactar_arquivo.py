@@ -53,15 +53,17 @@ try:
     BUCKET_RAW = "antaq-raw"
     BUCKET_STAGE = "antaq-stage"
 
-    objetosS3 = clientS3.list_objects(Bucket=BUCKET_RAW, Prefix=f"year={anoArquivos}")
+    listaAnos = anoArquivos.split(",")
+    for anoArquivos in listaAnos:
+        objetosS3 = clientS3.list_objects(Bucket=BUCKET_RAW, Prefix=f"year={anoArquivos}")
 
-    for obj in objetosS3.get("Contents"):
-        chave = obj["Key"]
-        ano, dataset, etapa, nomeArquivo = chave.split("/")
+        for obj in objetosS3.get("Contents"):
+            chave = obj["Key"]
+            ano, dataset, etapa, nomeArquivo = chave.split("/")
 
-        if etapa == "downloaded":
-            descompactarArquivo(BUCKET_RAW, chave)
-            moverArquivoProcessado(chave)
+            if etapa == "downloaded":
+                descompactarArquivo(BUCKET_RAW, chave)
+                moverArquivoProcessado(chave)
 
 except Exception as e:
     logging.error(f"Erro ao descompactar os arquivos do {anoArquivos}. [{e.args}]")

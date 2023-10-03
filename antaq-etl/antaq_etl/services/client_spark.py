@@ -71,10 +71,10 @@ def salvarDataFrameBancoDados(df, bancoDados, tabela: str, modoEscrita="overwrit
     df.write \
         .format("jdbc") \
         .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver") \
-        .option("url", f"jdbc:sqlserver://{MSSQL_HOST}:{MSSQL_PORT};databaseName={bancoDados};") \
+        .option("url", f"jdbc:sqlserver://sql-server:1433;databaseName={bancoDados};") \
         .option("dbtable", tabela) \
-        .option("user", MSSQL_USER) \
-        .option("password", MSSQL_PWD) \
+        .option("user", "SA") \
+        .option("password", "SqlServer2019!") \
         .option("encrypt", False) \
         .mode(modoEscrita) \
         .save()
@@ -85,11 +85,12 @@ def salvarDataFrameBancoDados(df, bancoDados, tabela: str, modoEscrita="overwrit
 def getDataframeFromSql(sparkSession: SparkSession, bancoDados: str, sql: str):
     df = sparkSession.read \
         .format("jdbc") \
-        .option("url", f"jdbc:postgresql://postgres-server:5432/{bancoDados}") \
-        .option("driver", "org.postgresql.Driver") \
-        .option("user", "postgres") \
-        .option("password", "postgres") \
+        .option("url", f"jdbc:sqlserver://sql-server:1433;databaseName={bancoDados};") \
+        .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver") \
+        .option("user", "SA") \
+        .option("password", "SqlServer2019!") \
         .option("query", sql) \
+        .option("encrypt", False) \
         .load()
 
     return df
