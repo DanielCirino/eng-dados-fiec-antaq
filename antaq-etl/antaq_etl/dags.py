@@ -41,7 +41,7 @@ def obterListaAnosDisponiveis():
 
     opcoesAno = docHtml.select("#anotxt option")
     listaAnos = [opcao.text for opcao in opcoesAno]
-    return listaAnos
+    return listaAnos[:3]
 
 
 def obterLinksDownload(ano: int):
